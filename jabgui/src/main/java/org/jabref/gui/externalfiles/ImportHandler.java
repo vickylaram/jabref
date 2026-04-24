@@ -124,6 +124,12 @@ public class ImportHandler {
             @Override
             public List<ImportFilesResultItemViewModel> call() {
                 counter = 1;
+                ImportFormatReader importFormatReader = new ImportFormatReader(
+                        preferences.getImporterPreferences(),
+                        preferences.getImportFormatPreferences(),
+                        preferences.getCitationKeyPatternPreferences(),
+                        fileUpdateMonitor
+                );
                 CompoundEdit compoundEdit = new CompoundEdit();
                 for (final Path file : files) {
                     final List<BibEntry> entriesToAdd = new ArrayList<>();
@@ -193,12 +199,21 @@ public class ImportHandler {
                             }
                             addResultToList(file, success, message);
                         } else {
-                            BibEntry emptyEntryWithLink = createEmptyEntryWithLink(file);
-                            entriesToAdd.add(emptyEntryWithLink);
-                            addResultToList(file, false, Localization.lang("No BibTeX data was found. An empty entry was created with file link."));
+                            ImportResult importResult = importFormatReader.importWithAutoDetection(file);
+                            List<BibEntry> entries = importResult.parserResult().getDatabase().getEntries();
+
+                            if (entries.isEmpty()) {
+                                BibEntry emptyEntryWithLink = createEmptyEntryWithLink(file);
+                                entriesToAdd.add(emptyEntryWithLink);
+                                addResultToList(file, false, Localization.lang("No BibTeX data was found. An empty entry was created with file link."));
+                                continue;
+                            }
+
+                            entriesToAdd.addAll(entries);
+                            addResultToList(file, true, Localization.lang("File was successfully imported as a new entry"));
                         }
-                    } catch (IOException ex) {
-                        LOGGER.error("Error importing", ex);
+                    } catch (IOException | ImportException ex) {
+                        LOGGER.error("Error importing file {}", file, ex);
                         addResultToList(file, false, Localization.lang("Error from import: %0", ex.getLocalizedMessage()));
 
                         UiTaskExecutor.runInJavaFXThread(() -> updateMessage(Localization.lang("Error")));
